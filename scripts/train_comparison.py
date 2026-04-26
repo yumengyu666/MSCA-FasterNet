@@ -160,16 +160,16 @@ def main():
     if num_classes is None:
         num_classes = 102 if args.dataset == "ip102" else 15
 
+    # Logger (must be created before any logger calls)
+    output_dir = os.path.join(args.output_dir, args.model)
+    os.makedirs(output_dir, exist_ok=True)
+    logger = setup_logger(name=args.model, log_dir=os.path.join(output_dir, "logs"))
+
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     if torch.cuda.is_available():
         logger.info(f"Using GPU: {torch.cuda.get_device_name(device)}")
     else:
         logger.warning("CUDA not available! Running on CPU!")
-
-    # Logger
-    output_dir = os.path.join(args.output_dir, args.model)
-    os.makedirs(output_dir, exist_ok=True)
-    logger = setup_logger(name=args.model, log_dir=os.path.join(output_dir, "logs"))
 
     # Model
     model = build_comparison_model(
@@ -201,7 +201,8 @@ def main():
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.epochs - args.warmup_epochs, eta_min=args.min_lr
     )
-    scaler = GradScaler("cuda")
+    use_cuda = device.type == "cuda"
+    scaler = GradScaler("cuda") if use_cuda else None
 
     # Progressive freezing (same as main train.py)
     if args.freeze_epochs > 0:
@@ -239,7 +240,7 @@ def main():
                     else:
                         use_mix = False
 
-            with autocast(device_type="cuda"):
+            with autocast(device_type="cuda", enabled=use_cuda):
                 outputs = model(images)
                 if use_mix:
                     loss = mixup_criterion(criterion, outputs, labels_a, labels_b, lam)
@@ -247,11 +248,16 @@ def main():
                     loss = criterion(outputs, labels)
 
             optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
-            scaler.step(optimizer)
-            scaler.update()
+            if use_cuda and scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+                optimizer.step()
 
         # Validate
         model.eval()

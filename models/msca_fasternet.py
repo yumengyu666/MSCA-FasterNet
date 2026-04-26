@@ -275,7 +275,7 @@ def msca_fasternet_t0(
         use_fusion=use_fusion,
         fusion_dim=160,
         fusion_target_size=14,
-        fusion_use_msca=True,
+        fusion_use_msca=kwargs.pop("fusion_use_msca", True),  # Allow ablation to disable
         use_msca_in_blocks=use_msca,
         **kwargs,
     )
@@ -317,11 +317,12 @@ def fasternet_t0_with_msca(num_classes: int = 102, **kwargs) -> MSCAFasterNet:
 
 
 def fasternet_t0_with_fusion(num_classes: int = 102, **kwargs) -> MSCAFasterNet:
-    """Ablation C: FasterNet-T0 + fusion only (no MSCA in backbone, but fusion still uses MSCA)."""
+    """Ablation C: FasterNet-T0 + fusion only (no MSCA anywhere, pure fusion contribution)."""
     return msca_fasternet_t0(
         num_classes=num_classes,
         use_msca=False,
         use_fusion=True,
+        fusion_use_msca=False,  # Ablation: disable MSCA in fusion to isolate fusion's contribution
         **kwargs,
     )
 

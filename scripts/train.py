@@ -413,6 +413,13 @@ def main():
     set_seed(args.seed)
     os.makedirs(args.output_dir, exist_ok=True)
 
+    # Logger (must be created before any logger calls)
+    logger = setup_logger(
+        name=f"{args.dataset}_{args.model}",
+        log_dir=os.path.join(args.output_dir, "logs"),
+    )
+    logger.info(f"Args: {json.dumps(vars(args), indent=2)}")
+
     # Device
     use_amp = args.amp and not args.no_amp
     if torch.cuda.is_available():
@@ -424,13 +431,6 @@ def main():
         device = torch.device("cpu")
         use_amp = False
         logger.warning("CUDA not available! Training on CPU - this will be very slow!")
-
-    # Logger
-    logger = setup_logger(
-        name=f"{args.dataset}_{args.model}",
-        log_dir=os.path.join(args.output_dir, "logs"),
-    )
-    logger.info(f"Args: {json.dumps(vars(args), indent=2)}")
 
     # Model
     model, num_classes = build_model(args)

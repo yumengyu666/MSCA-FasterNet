@@ -173,13 +173,14 @@ def evaluate(model, dataloader, device, num_classes):
 def main():
     args = parse_args()
 
+    # Logger (must be created before any logger calls)
+    logger = setup_logger(name="evaluate", log_dir=args.output_dir)
+
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     if torch.cuda.is_available():
         logger.info(f"Using GPU: {torch.cuda.get_device_name(device)}")
     else:
         logger.warning("CUDA not available! Running on CPU!")
-
-    logger = setup_logger(name="evaluate", log_dir=args.output_dir)
 
     # Load model
     model, num_classes, model_name = build_model_from_checkpoint(args, device)

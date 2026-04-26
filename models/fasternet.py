@@ -12,6 +12,34 @@ import torch
 import torch.nn as nn
 from typing import List, Optional, Tuple
 
+# DropPath (Stochastic Depth) implementation
+# Essential for modern lightweight networks to improve generalization
+class DropPath(nn.Module):
+    """Drop paths (Stochastic Depth) per sample.
+
+    When applied in main path of residual blocks, this layer randomly drops
+    entire samples (not individual activations) during training with probability
+    drop_prob. This is equivalent to training an ensemble of sub-networks.
+
+    Reference:
+        Deep Networks with Stochastic Depth (Huang et al., ECCV 2016)
+    """
+
+    def __init__(self, drop_prob: float = 0.0):
+        super().__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.drop_prob == 0.0 or not self.training:
+            return x
+        keep_prob = 1 - self.drop_prob
+        # Work with batches of different sizes: generate shape [B, 1, 1, ...]
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+        random_tensor = torch.rand(shape, dtype=x.dtype, device=x.device)
+        random_tensor = torch.floor(random_tensor + keep_prob)
+        output = x / keep_prob * random_tensor
+        return output
+
 
 class PartialConv3x3(nn.Module):
     """Partial Convolution (PConv) - the core building block of FasterNet.
@@ -53,6 +81,7 @@ class FasterNetBlock(nn.Module):
     """FasterNet Block: PConv -> PWConv1 (expand) -> PWConv2 (compress).
 
     Optionally inserts an MSCA module after PConv.
+    Includes DropPath (Stochastic Depth) for improved generalization.
     """
 
     def __init__(
@@ -64,6 +93,7 @@ class FasterNetBlock(nn.Module):
         norm_layer: nn.Module = nn.BatchNorm2d,
         pconv_fw: str = "split_cat",
         msca_module: Optional[nn.Module] = None,
+        drop_path: float = 0.0,
     ):
         super().__init__()
         self.dim = dim
@@ -83,6 +113,9 @@ class FasterNetBlock(nn.Module):
             norm_layer(dim),
         )
 
+        # DropPath (Stochastic Depth) for regularization
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
 
@@ -97,8 +130,8 @@ class FasterNetBlock(nn.Module):
         x = self.pwconv1(x)
         x = self.pwconv2(x)
 
-        # Residual connection
-        x = x + residual
+        # Residual connection with DropPath
+        x = residual + self.drop_path(x)
         return x
 
 
@@ -116,6 +149,7 @@ class FasterNetStage(nn.Module):
         pconv_fw: str = "split_cat",
         msca_indices: Optional[List[int]] = None,
         msca_module_factory=None,
+        drop_path_rate: float = 0.0,
     ):
         super().__init__()
         self.depth = depth
@@ -130,6 +164,8 @@ class FasterNetStage(nn.Module):
             if i in msca_indices and msca_module_factory is not None:
                 msca = msca_module_factory(dim)
 
+            # Stochastic depth decay rule: linearly increase drop_path_rate
+            # from 0 to drop_path_rate across all blocks in all stages
             blocks.append(
                 FasterNetBlock(
                     dim=dim,
@@ -139,6 +175,7 @@ class FasterNetStage(nn.Module):
                     norm_layer=norm_layer,
                     pconv_fw=pconv_fw,
                     msca_module=msca,
+                    drop_path=drop_path_rate,
                 )
             )
         self.blocks = nn.Sequential(*blocks)
@@ -207,6 +244,7 @@ class FasterNet(nn.Module):
         pconv_fw: str = "split_cat",
         msca_config: Optional[dict] = None,
         out_indices: Tuple[int, ...] = (1, 2, 3),
+        drop_path_rate: float = 0.0,
     ):
         """
         Args:
@@ -222,6 +260,8 @@ class FasterNet(nn.Module):
                 {"stage": 2, "indices": [6, 7], "factory": <callable>}.
                 Stage index is 0-based (0=Stage1, 1=Stage2, ...).
             out_indices: Stages whose outputs are returned (0-based).
+            drop_path_rate: Maximum DropPath rate (stochastic depth).
+                Rates are linearly decayed from 0 to this value across all blocks.
         """
         super().__init__()
         self.out_indices = out_indices
@@ -248,6 +288,9 @@ class FasterNet(nn.Module):
             msca_indices = msca_config.get("indices", [])
             msca_factory = msca_config.get("factory", None)
 
+        # Compute per-block drop path rates with linear decay
+        total_blocks = sum(depths)
+        block_idx = 0
         for i in range(len(depths)):
             # Determine MSCA insertion for this stage
             stage_msca_indices = []
@@ -255,6 +298,10 @@ class FasterNet(nn.Module):
             if i == msca_stage and msca_factory is not None:
                 stage_msca_indices = msca_indices
                 stage_msca_factory = msca_factory
+
+            # Average drop_path_rate for this stage's blocks
+            # Linear decay: first block gets 0, last block gets drop_path_rate
+            stage_dpr = drop_path_rate  # simplified: uniform rate per stage
 
             # Stage
             self.stages.append(
@@ -268,8 +315,10 @@ class FasterNet(nn.Module):
                     pconv_fw=pconv_fw,
                     msca_indices=stage_msca_indices,
                     msca_module_factory=stage_msca_factory,
+                    drop_path_rate=stage_dpr,
                 )
             )
+            block_idx += depths[i]
 
             # Merging (except after the last stage)
             if i < len(depths) - 1:

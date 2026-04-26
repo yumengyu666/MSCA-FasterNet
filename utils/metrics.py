@@ -6,6 +6,57 @@ import numpy as np
 from typing import Dict, Optional
 
 
+def compute_f1_score(
+    all_preds: np.ndarray,
+    all_labels: np.ndarray,
+    num_classes: int,
+    average: str = "macro",
+) -> float:
+    """Compute F1-score.
+
+    Args:
+        all_preds: Predicted labels (N,).
+        all_labels: True labels (N,).
+        num_classes: Number of classes.
+        average: Averaging method - 'macro', 'weighted', or 'micro'.
+
+    Returns:
+        F1-score (0-100 scale).
+    """
+    # Compute per-class precision, recall, F1
+    f1_per_class = []
+    support_per_class = []
+
+    for cls in range(num_classes):
+        tp = np.sum((all_preds == cls) & (all_labels == cls))
+        fp = np.sum((all_preds == cls) & (all_labels != cls))
+        fn = np.sum((all_preds != cls) & (all_labels == cls))
+        support = np.sum(all_labels == cls)
+
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+        f1_per_class.append(f1)
+        support_per_class.append(support)
+
+    f1_per_class = np.array(f1_per_class)
+    support_per_class = np.array(support_per_class)
+
+    if average == "macro":
+        return float(np.mean(f1_per_class) * 100)
+    elif average == "weighted":
+        total = support_per_class.sum()
+        if total == 0:
+            return 0.0
+        return float(np.sum(f1_per_class * support_per_class / total) * 100)
+    elif average == "micro":
+        # Micro F1 = accuracy for single-label classification
+        return float(np.mean(all_preds == all_labels) * 100)
+    else:
+        raise ValueError(f"Unknown average mode: {average}")
+
+
 def compute_metrics(
     preds: torch.Tensor,
     labels: torch.Tensor,

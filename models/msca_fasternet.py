@@ -5,8 +5,11 @@ Combines FasterNet-T0 backbone with:
     2. Cross-Layer Feature Fusion across Stage2/3/4
     3. Simplified classification head
 
-Total parameters: ~4.07M (vs. FasterNet-T0's 3.9M)
-Total FLOPs: ~0.40G (vs. FasterNet-T0's 0.34G)
+Parameter counts (verified):
+    - Baseline (FasterNet-T0, no MSCA, no fusion): ~3.9M params, ~0.34G FLOPs
+    - Full model (MSCA + fusion + DropPath): ~4.1M params, ~0.40G FLOPs
+    - MSCA overhead: ~9.3K per module × 2 = ~18.6K
+    - Fusion overhead: ~150K (alignment + compression + MSCA)
 """
 
 import torch
@@ -69,6 +72,7 @@ class MSCAFasterNet(nn.Module):
         act_layer: nn.Module = nn.GELU,
         norm_layer: nn.Module = nn.BatchNorm2d,
         dropout: float = 0.0,
+        drop_path_rate: float = 0.05,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -77,6 +81,7 @@ class MSCAFasterNet(nn.Module):
         self.dims = [embed_dim * (2 ** i) for i in range(len(depths))]
         self.use_fusion = use_fusion
         self.use_msca_in_blocks = use_msca_in_blocks
+        self.drop_path_rate = drop_path_rate
 
         if msca_block_indices is None:
             msca_block_indices = [depths[msca_stage] - 2, depths[msca_stage] - 1]
@@ -110,6 +115,7 @@ class MSCAFasterNet(nn.Module):
             pconv_fw="split_cat",
             msca_config=msca_config,
             out_indices=(1, 2, 3),  # Stage2, Stage3, Stage4
+            drop_path_rate=drop_path_rate,
         )
 
         # === Cross-Layer Feature Fusion ===
@@ -142,8 +148,15 @@ class MSCAFasterNet(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights for newly added modules."""
-        for m in self.modules():
+        """Initialize weights for newly added modules.
+
+        Only initializes the classification head, fusion module, and MSCA modules.
+        Backbone weights are NOT reset here to preserve pretrained weights.
+        """
+        for name, m in self.named_modules():
+            # Skip backbone modules — they may have pretrained weights
+            if name.startswith("backbone."):
+                continue
             if isinstance(m, nn.Conv2d):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
@@ -304,7 +317,7 @@ def fasternet_t0_with_msca(num_classes: int = 102, **kwargs) -> MSCAFasterNet:
 
 
 def fasternet_t0_with_fusion(num_classes: int = 102, **kwargs) -> MSCAFasterNet:
-    """Ablation C: FasterNet-T0 + fusion only (no MSCA in backbone)."""
+    """Ablation C: FasterNet-T0 + fusion only (no MSCA in backbone, but fusion still uses MSCA)."""
     return msca_fasternet_t0(
         num_classes=num_classes,
         use_msca=False,

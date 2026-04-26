@@ -2,36 +2,38 @@
 
 IP102: A Large-Scale Benchmark Dataset for Insect Pest Recognition
 - 102 classes of agricultural insect pests
-- ~75,000 images total
-- Official train/val/test split provided
+- ~45,000 images (by-class-name organized version)
 - Source: CVPR 2019, https://github.com/xpwu95/IP102
 
-Expected directory structure:
+Directory structure (by class name):
     data/IP102/
-    ├── ip102_v1.1/
-    │   ├── images/
-    │   │   ├── 001/
-    │   │   │   ├── 00101.jpg
-    │   │   │   ├── 00102.jpg
-    │   │   │   └── ...
-    │   │   ├── 002/
-    │   │   └── ...
-    │   └── list/
-    │       ├── train.txt
-    │       ├── val.txt
-    │       └── test.txt
+    ├── Adristyrannus/
+    │   ├── img001.jpg
+    │   └── ...
+    ├── Aleurocanthus spiniferus/
+    ├── ...
+    ├── classes.txt          (optional: class index mapping)
+    └── yellow rice borer/
+
+When official train/val/test split files are not available,
+a stratified random split (8:1:1) is used with a fixed seed for reproducibility.
 """
 
 import os
 import torch
-from torch.utils.data import Dataset, DataLoader
+import numpy as np
+from torch.utils.data import Dataset, DataLoader, Subset
 from PIL import Image
-from typing import Optional, Callable, Tuple, List
+from typing import Optional, Callable, Tuple, List, Dict
 import torchvision.transforms as transforms
 
 
 class IP102Dataset(Dataset):
     """IP102 Insect Pest Recognition Dataset.
+
+    Supports two directory layouts:
+    1. By class name: data/IP102/ClassName/images (current)
+    2. Official: data/IP102/ip102_v1.1/images/NNN/images (legacy)
 
     Args:
         root_dir: Root directory of IP102 dataset.
@@ -40,42 +42,42 @@ class IP102Dataset(Dataset):
         return_path: Whether to return image path (for visualization).
     """
 
-    # Class names mapping (1-indexed in dataset, 0-indexed in code)
+    # Class names from classes.txt (102 classes, 0-indexed in code)
     CLASS_NAMES = [
-        "rice_leaf_roller", "rice_striped_stem_borer", "rice_gall_midge",
-        "rice_stem_fly", "brown_planthopper", "white_backed_planthopper",
-        "small_brown_planthopper", "rice_leaf_caterpillar", "rice_skipper",
-        "rice_seedling_chaf", "paddy_stem_maggot", "asiatic_rice_borer",
-        "yellow_rice_borer", "rice_aphid", "rice_water_weevil",
-        "rice_leafminer", "rice_whorl_maggot", "rice_hispa",
-        "rice_caseworm", "rice_stem_nematode", "wheat_phloeothrips",
-        "wheat_sawfly", "wheat_midge", "wheat_spider",
-        "wheat_aphid", "wheat_stem_borer", "corn_borer",
-        "corn_aphid", "corn_armyworm", "corn_flea_beetle",
-        "corn_seed_maggot", "corn_leaf_blight", "corn_brown_spot",
-        "corn_rust", "corn_smut", "corn_head_smu",
-        "corn_sheath_blight", "cotton_bollworm", "cotton_aphid",
-        "cotton_pink_bollworm", "cotton_spider_mite", "cotton_whitefly",
-        "cotton_mirid_bug", "cotton_thrips", "cotton_leaf_roller",
-        "cotton_virescence", "soybean_aphid", "soybean_looper",
-        "soybean_bean_beetle", "soybean_whitefly", "soybean_pod_borer",
-        "soybean_stem_fly", "soybean_nematode", "peanut_aphid",
-        "peanut_thrips", "peanut_jassid", "peanut_mite",
-        "peanut_white_grub", "peanut_wireworm", "peanut_cutworm",
-        "peanut_tobacco_caterpillar", "peanut_sapling_fly",
-        "peanut_leaf_spot", "peanut_bacterial_wilt", "peanut_rust",
-        "peanut_web blotch", "peanut_pepper_spot", "peanut_sclerotium_blight",
-        "beet_flea_beetle", "beet_webworm", "beet_armyworm",
-        "beet_sugarbeet_cyst_nematode", "beet_aphid", "beet_leafminer",
-        "beet_bacterial_leaf_spot", "beet_cercospora_leaf_spot", "beet_powdery_mildew",
-        "beet_rhizoctonia_root_rot", "beet_pythium_root_rot", "beet_fusarium_yellows",
-        "rape_flea_beetle", "rape_aphid", "rape_sclerotinia_stem_rot",
-        "rape_cabbage_worm", "rape_cabbage_sawfly", "rape_pod_midge",
-        "rape_white_rust", "rape_downy_mildew", "rape_virus_disease",
-        "rape_black_spot", "rape_soft_rot", "rape_charcoal_rot",
-        "rape_club_root", "rape_sclerotinia", "rape_alternaria",
-        "rape_gray_mold", "rape_fusarium_wilt", "rape_black_leg",
-        "rape_light_leaf_spot", "rape_stem_rot",
+        "rice leaf roller", "rice striped stem borer", "rice gall midge",
+        "rice stem fly", "brown planthopper", "white backed planthopper",
+        "small brown planthopper", "rice leaf caterpillar", "rice skipper",
+        "rice seedling chaf", "paddy stem maggot", "asiatic rice borer",
+        "yellow rice borer", "rice aphid", "rice water weevil",
+        "rice leafminer", "rice whorl maggot", "rice hispa",
+        "rice caseworm", "rice stem nematode", "wheat phloeothrips",
+        "wheat sawfly", "wheat midge", "wheat spider",
+        "wheat aphid", "wheat stem borer", "corn borer",
+        "corn aphid", "corn armyworm", "corn flea beetle",
+        "corn seed maggot", "corn leaf blight", "corn brown spot",
+        "corn rust", "corn smut", "corn head smu",
+        "corn sheath blight", "cotton bollworm", "cotton aphid",
+        "cotton pink bollworm", "cotton spider mite", "cotton whitefly",
+        "cotton mirid bug", "cotton thrips", "cotton leaf roller",
+        "cotton virescence", "soybean aphid", "soybean looper",
+        "soybean bean beetle", "soybean whitefly", "soybean pod borer",
+        "soybean stem fly", "soybean nematode", "peanut aphid",
+        "peanut thrips", "peanut jassid", "peanut mite",
+        "peanut white grub", "peanut wireworm", "peanut cutworm",
+        "peanut tobacco caterpillar", "peanut sapling fly",
+        "peanut leaf spot", "peanut bacterial wilt", "peanut rust",
+        "peanut web blotch", "peanut pepper spot", "peanut sclerotium blight",
+        "beet flea beetle", "beet webworm", "beet armyworm",
+        "beet sugarbeet cyst nematode", "beet aphid", "beet leafminer",
+        "beet bacterial leaf spot", "beet cercospora leaf spot", "beet powdery mildew",
+        "beet rhizoctonia root rot", "beet pythium root rot", "beet fusarium yellows",
+        "rape flea beetle", "rape aphid", "rape sclerotinia stem rot",
+        "rape cabbage worm", "rape cabbage sawfly", "rape pod midge",
+        "rape white rust", "rape downy mildew", "rape virus disease",
+        "rape black spot", "rape soft rot", "rape charcoal rot",
+        "rape club root", "rape sclerotinia", "rape alternaria",
+        "rape gray mold", "rape fusarium wilt", "rape black leg",
+        "rape light leaf spot", "rape stem rot",
     ]
 
     def __init__(
@@ -92,37 +94,131 @@ class IP102Dataset(Dataset):
         self.split = split
         self.transform = transform
         self.return_path = return_path
+        self.num_classes = 102
 
-        self.images_dir = os.path.join(root_dir, "ip102_v1.1", "images")
-        self.list_dir = os.path.join(root_dir, "ip102_v1.1", "list")
+        # Try official structure first, then fall back to by-class-name
+        self.samples = self._load_samples()
 
-        # Load file list
-        list_file = os.path.join(self.list_dir, f"{split}.txt")
-        self.samples = self._load_list(list_file)
+    def _load_samples(self) -> List[Tuple[str, int]]:
+        """Load all image paths and labels.
 
-    def _load_list(self, list_file: str) -> List[Tuple[str, int]]:
-        """Load image paths and labels from list file.
-
-        IP102 list format: image_name class_id (tab-separated)
-        Example: 00101.jpg 1
+        Tries:
+        1. Official IP102 structure (ip102_v1.1/images/NNN/ + list/train.txt)
+        2. By-class-name structure (ClassName/images)
         """
+        # Method 1: Official structure
+        official_dir = os.path.join(self.root_dir, "ip102_v1.1")
+        if os.path.isdir(official_dir):
+            list_file = os.path.join(official_dir, "list", f"{self.split}.txt")
+            if os.path.isfile(list_file):
+                return self._load_official(list_file, official_dir)
+
+        # Method 2: By-class-name structure
+        # Collect all images from class folders
+        all_samples = self._load_by_class_name()
+
+        # Stratified random split (8:1:1)
+        return self._stratified_split(all_samples)
+
+    def _load_official(self, list_file: str, official_dir: str) -> List[Tuple[str, int]]:
+        """Load from official IP102 format."""
         samples = []
+        images_dir = os.path.join(official_dir, "images")
         with open(list_file, "r") as f:
             for line in f:
                 parts = line.strip().split()
                 if len(parts) >= 2:
                     img_name = parts[0]
                     class_id = int(parts[1]) - 1  # Convert to 0-indexed
-
-                    # Construct full path: class_folder / image_name
                     class_folder = f"{class_id + 1:03d}"
-                    img_path = os.path.join(self.images_dir, class_folder, img_name)
-
+                    img_path = os.path.join(images_dir, class_folder, img_name)
                     if os.path.exists(img_path):
                         samples.append((img_path, class_id))
-
-        print(f"IP102 {self.split}: loaded {len(samples)} images from {len(set(s[1] for s in samples))} classes")
+        print(f"IP102 {self.split} (official): {len(samples)} images, "
+              f"{len(set(s[1] for s in samples))} classes")
         return samples
+
+    def _load_by_class_name(self) -> List[Tuple[str, int]]:
+        """Load all images from class-name-organized folders."""
+        # Try to load class mapping from classes.txt
+        class_map = self._load_class_map()
+
+        all_samples = []
+        valid_exts = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff")
+
+        # List class directories
+        class_dirs = sorted([
+            d for d in os.listdir(self.root_dir)
+            if os.path.isdir(os.path.join(self.root_dir, d))
+        ])
+
+        for class_idx, class_name in enumerate(class_dirs):
+            class_dir = os.path.join(self.root_dir, class_name)
+            for fname in sorted(os.listdir(class_dir)):
+                if fname.lower().endswith(valid_exts):
+                    img_path = os.path.join(class_dir, fname)
+                    # Use class_map if available, otherwise use alphabetical index
+                    label = class_map.get(class_name, class_idx)
+                    all_samples.append((img_path, label))
+
+        print(f"IP102: found {len(all_samples)} images in {len(class_dirs)} class folders")
+        return all_samples
+
+    def _load_class_map(self) -> Dict[str, int]:
+        """Load class name -> index mapping from classes.txt."""
+        classes_file = os.path.join(self.root_dir, "classes.txt")
+        class_map = {}
+        if os.path.isfile(classes_file):
+            with open(classes_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split(None, 1)
+                    if len(parts) == 2:
+                        idx = int(parts[0]) - 1  # Convert 1-indexed to 0-indexed
+                        name = parts[1].strip()
+                        class_map[name] = idx
+        return class_map
+
+    def _stratified_split(self, all_samples: List[Tuple[str, int]]) -> List[Tuple[str, int]]:
+        """Split samples into train/val/test with stratified random sampling.
+
+        Uses 8:1:1 ratio with a fixed seed (42) for reproducibility.
+        """
+        rng = np.random.RandomState(42)
+
+        # Group by class
+        class_samples: Dict[int, List[Tuple[str, int]]] = {}
+        for sample in all_samples:
+            label = sample[1]
+            if label not in class_samples:
+                class_samples[label] = []
+            class_samples[label].append(sample)
+
+        split_samples = []
+        for label in sorted(class_samples.keys()):
+            samples = class_samples[label]
+            indices = list(range(len(samples)))
+            rng.shuffle(indices)
+
+            n_total = len(samples)
+            n_train = max(1, int(n_total * 0.8))
+            n_val = max(1, int(n_total * 0.1))
+
+            if self.split == "train":
+                sel_indices = indices[:n_train]
+            elif self.split == "val":
+                sel_indices = indices[n_train:n_train + n_val]
+            else:  # test
+                sel_indices = indices[n_train + n_val:]
+
+            for idx in sel_indices:
+                split_samples.append(samples[idx])
+
+        print(f"IP102 {self.split} (stratified 8:1:1): {len(split_samples)} images, "
+              f"{len(set(s[1] for s in split_samples))} classes")
+        return split_samples
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -130,10 +226,13 @@ class IP102Dataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple:
         img_path, label = self.samples[idx]
 
-        # Load image
-        image = Image.open(img_path).convert("RGB")
+        try:
+            image = Image.open(img_path).convert("RGB")
+        except (OSError, IOError) as e:
+            # Return a black image if file is corrupted
+            print(f"Warning: Cannot load {img_path}: {e}")
+            image = Image.new("RGB", (224, 224), (0, 0, 0))
 
-        # Apply transforms
         if self.transform is not None:
             image = self.transform(image)
 
@@ -146,22 +245,15 @@ class IP102Dataset(Dataset):
         labels = [s[1] for s in self.samples]
         counts = torch.zeros(102, dtype=torch.long)
         for label in labels:
-            counts[label] += 1
+            if 0 <= label < 102:
+                counts[label] += 1
         return counts
 
 
 def get_ip102_transforms(split: str = "train", input_size: int = 224):
-    """Get standard transforms for IP102 dataset.
-
-    Args:
-        split: 'train', 'val', or 'test'.
-        input_size: Input image size.
-
-    Returns:
-        torchvision.transforms.Compose pipeline.
-    """
+    """Get standard transforms for IP102 dataset."""
     normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],  # ImageNet stats
+        mean=[0.485, 0.456, 0.406],
         std=[0.229, 0.224, 0.225],
     )
 
@@ -173,6 +265,7 @@ def get_ip102_transforms(split: str = "train", input_size: int = 224):
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1),
             transforms.ToTensor(),
             normalize,
+            transforms.RandomErasing(p=0.2, scale=(0.02, 0.1)),  # Simulate occlusion
         ])
     else:
         return transforms.Compose([
@@ -192,20 +285,7 @@ def build_ip102_dataloader(
     use_weighted_sampler: bool = True,
     return_path: bool = False,
 ) -> DataLoader:
-    """Build DataLoader for IP102 dataset.
-
-    Args:
-        root_dir: Root directory of IP102.
-        split: Data split.
-        batch_size: Batch size.
-        num_workers: Number of data loading workers.
-        input_size: Input image size.
-        use_weighted_sampler: Use WeightedRandomSampler for class balance (train only).
-        return_path: Return image paths (for visualization).
-
-    Returns:
-        torch.utils.data.DataLoader.
-    """
+    """Build DataLoader for IP102 dataset."""
     from utils.sampler import WeightedSamplerBuilder
 
     transform = get_ip102_transforms(split, input_size)
@@ -217,7 +297,7 @@ def build_ip102_dataloader(
     if split == "train" and use_weighted_sampler:
         sampler_builder = WeightedSamplerBuilder()
         sampler = sampler_builder.from_dataset(dataset)
-        shuffle = False  # Cannot shuffle with custom sampler
+        shuffle = False
 
     dataloader = DataLoader(
         dataset,

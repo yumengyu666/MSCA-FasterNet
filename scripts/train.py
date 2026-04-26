@@ -21,11 +21,14 @@ import argparse
 import json
 import time
 
+# Fix OpenMP duplicate library error on Windows
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -144,7 +147,7 @@ def build_model(args):
     """Build model based on args."""
     num_classes = args.num_classes
     if num_classes is None:
-        num_classes = 102 if args.dataset == "ip102" else 38
+        num_classes = 102 if args.dataset == "ip102" else 15
 
     model_builders = {
         "baseline": fasternet_t0_baseline,
@@ -312,7 +315,7 @@ def train_one_epoch(
         use_amp = args.amp and not args.no_amp
 
         if use_amp:
-            with autocast():
+            with autocast(device_type="cuda"):
                 outputs = model(images)
                 if use_mix:
                     loss = mixup_criterion(criterion, outputs, labels_a, labels_b, lam)
@@ -338,7 +341,14 @@ def train_one_epoch(
             optimizer.step()
 
         # Metrics
-        acc1, acc5 = _accuracy(outputs, labels, topk=(1, 5))
+        if use_mix:
+            # For mixed samples, compute weighted accuracy from both label sets
+            acc1_a, acc5_a = _accuracy(outputs, labels_a, topk=(1, 5))
+            acc1_b, acc5_b = _accuracy(outputs, labels_b, topk=(1, 5))
+            acc1 = lam * acc1_a + (1 - lam) * acc1_b
+            acc5 = lam * acc5_a + (1 - lam) * acc5_b
+        else:
+            acc1, acc5 = _accuracy(outputs, labels, topk=(1, 5))
         losses.update(loss.item(), images.size(0))
         top1.update(acc1.item(), images.size(0))
         top5.update(acc5.item(), images.size(0))
@@ -407,9 +417,13 @@ def main():
     use_amp = args.amp and not args.no_amp
     if torch.cuda.is_available():
         device = torch.device(f"cuda:{args.gpu}")
+        logger.info(f"Using GPU: {torch.cuda.get_device_name(device)} | "
+                    f"CUDA {torch.version.cuda} | "
+                    f"Memory: {torch.cuda.get_device_properties(device).total_memory/1024/1024:.0f}MB")
     else:
         device = torch.device("cpu")
         use_amp = False
+        logger.warning("CUDA not available! Training on CPU - this will be very slow!")
 
     # Logger
     logger = setup_logger(
@@ -451,7 +465,7 @@ def main():
     )
 
     # AMP scaler
-    scaler = GradScaler() if use_amp else None
+    scaler = GradScaler("cuda") if use_amp else None
 
     # Resume
     start_epoch = 0
@@ -529,6 +543,8 @@ def main():
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "scaler_state_dict": scaler.state_dict() if scaler else None,
                 "best_acc": best_acc,
                 "config": vars(args),
             }

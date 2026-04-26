@@ -4,6 +4,12 @@ Supports: MobileNetV3-Small, ShuffleNetV2-x0.5, GhostNetV2, EfficientNet-Lite0
 All models use ImageNet pretrained weights and identical training settings
 for fair comparison with MSCA-FasterNet.
 
+Uses the SAME training pipeline as the main train.py:
+    - MixUp / CutMix data augmentation
+    - Gradient clipping
+    - Progressive unfreezing
+    - AMP with proper scaler
+
 Usage:
     python scripts/train_comparison.py --model mobilenetv3_small_100 --dataset ip102
 """
@@ -14,10 +20,14 @@ import argparse
 import json
 import time
 
+# Fix OpenMP duplicate library error on Windows
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -30,6 +40,8 @@ from utils import (
     AverageMeter,
     ProgressMeter,
     warmup_lr_scheduler,
+    freeze_backbone,
+    unfreeze_all,
 )
 
 
@@ -83,7 +95,61 @@ def parse_args():
     parser.add_argument("--save-freq", type=int, default=10)
     parser.add_argument("--no-pretrained", action="store_true")
 
+    # Same augmentation args as train.py for fair comparison
+    parser.add_argument("--mixup-alpha", type=float, default=0.2,
+                        help="MixUp alpha (0 to disable)")
+    parser.add_argument("--cutmix-alpha", type=float, default=1.0,
+                        help="CutMix alpha (0 to disable)")
+    parser.add_argument("--mix-prob", type=float, default=0.5,
+                        help="Probability of applying MixUp/CutMix")
+    parser.add_argument("--clip-grad", type=float, default=5.0,
+                        help="Gradient clipping max norm")
+    parser.add_argument("--freeze-epochs", type=int, default=50,
+                        help="Epochs to freeze backbone (0 to disable)")
+
     return parser.parse_args()
+
+
+# === MixUp / CutMix (same implementation as train.py) ===
+
+def mixup_data(x, y, alpha=0.2):
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).to(x.device)
+    mixed_x = lam * x + (1 - lam) * x[index]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
+def cutmix_data(x, y, alpha=1.0):
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).to(x.device)
+    W, H = x.size(2), x.size(3)
+    cut_ratio = np.sqrt(1.0 - lam)
+    cut_w = int(W * cut_ratio)
+    cut_h = int(H * cut_ratio)
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+    x1 = np.clip(cx - cut_w // 2, 0, W)
+    y1 = np.clip(cy - cut_h // 2, 0, H)
+    x2 = np.clip(cx + cut_w // 2, 0, W)
+    y2 = np.clip(cy + cut_h // 2, 0, H)
+    mixed_x = x.clone()
+    mixed_x[:, :, x1:x2, y1:y2] = x[index, :, x1:x2, y1:y2]
+    lam = 1 - (x2 - x1) * (y2 - y1) / (W * H)
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
 def main():
@@ -92,9 +158,13 @@ def main():
 
     num_classes = args.num_classes
     if num_classes is None:
-        num_classes = 102 if args.dataset == "ip102" else 38
+        num_classes = 102 if args.dataset == "ip102" else 15
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        logger.info(f"Using GPU: {torch.cuda.get_device_name(device)}")
+    else:
+        logger.warning("CUDA not available! Running on CPU!")
 
     # Logger
     output_dir = os.path.join(args.output_dir, args.model)
@@ -114,21 +184,29 @@ def main():
     # Data
     data_dir = args.data_dir or f"data/{args.dataset.upper()}"
     if args.dataset == "ip102":
-        train_loader = build_ip102_dataloader(data_dir, "train", args.batch_size, args.workers)
-        val_loader = build_ip102_dataloader(data_dir, "val", args.batch_size, args.workers, use_weighted_sampler=False)
-        test_loader = build_ip102_dataloader(data_dir, "test", args.batch_size, args.workers, use_weighted_sampler=False)
+        train_loader = build_ip102_dataloader(data_dir, "train", args.batch_size, args.workers,
+                                               use_weighted_sampler=True)
+        val_loader = build_ip102_dataloader(data_dir, "val", args.batch_size, args.workers,
+                                             use_weighted_sampler=False)
+        test_loader = build_ip102_dataloader(data_dir, "test", args.batch_size, args.workers,
+                                              use_weighted_sampler=False)
     else:
         train_loader = build_plantvillage_dataloader(data_dir, "train", args.batch_size, args.workers)
         val_loader = build_plantvillage_dataloader(data_dir, "val", args.batch_size, args.workers)
         test_loader = build_plantvillage_dataloader(data_dir, "test", args.batch_size, args.workers)
 
-    # Training setup
+    # Training setup (identical to main train.py)
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.epochs - args.warmup_epochs, eta_min=args.min_lr
     )
-    scaler = GradScaler()
+    scaler = GradScaler("cuda")
+
+    # Progressive freezing (same as main train.py)
+    if args.freeze_epochs > 0:
+        freeze_backbone(model, freeze_stages=(0, 1))
+        logger.info(f"Backbone frozen for first {args.freeze_epochs} epochs")
 
     best_acc = 0.0
 
@@ -136,32 +214,53 @@ def main():
         if epoch < args.warmup_epochs:
             warmup_lr_scheduler(optimizer, args.warmup_epochs, args.lr, epoch)
 
+        # Progressive unfreezing
+        if args.freeze_epochs > 0 and epoch == args.freeze_epochs:
+            unfreeze_all(model)
+            for param_group in optimizer.param_groups:
+                param_group["lr"] *= 0.1
+            logger.info(f"Unfrozen backbone at epoch {epoch}")
+
         # Train
         model.train()
         for i, (images, labels) in enumerate(train_loader):
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            with autocast():
+            # Apply MixUp/CutMix (same as main train.py)
+            use_mix = False
+            if args.mixup_alpha > 0 or args.cutmix_alpha > 0:
+                if np.random.rand() < args.mix_prob:
+                    use_mix = True
+                    if np.random.rand() < 0.5 and args.mixup_alpha > 0:
+                        images, labels_a, labels_b, lam = mixup_data(images, labels, args.mixup_alpha)
+                    elif args.cutmix_alpha > 0:
+                        images, labels_a, labels_b, lam = cutmix_data(images, labels, args.cutmix_alpha)
+                    else:
+                        use_mix = False
+
+            with autocast(device_type="cuda"):
                 outputs = model(images)
-                loss = criterion(outputs, labels)
+                if use_mix:
+                    loss = mixup_criterion(criterion, outputs, labels_a, labels_b, lam)
+                else:
+                    loss = criterion(outputs, labels)
 
             optimizer.zero_grad()
             scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
             scaler.step(optimizer)
             scaler.update()
 
         # Validate
         model.eval()
         correct = total = 0
-        val_loss = 0
         with torch.no_grad():
             for images, labels in val_loader:
                 images = images.to(device)
                 labels = labels.to(device)
                 outputs = model(images)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item()
                 preds = outputs.argmax(1)
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)

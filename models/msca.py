@@ -82,7 +82,7 @@ class MSCA(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
+        """Forward pass with residual connection.
 
         Args:
             x: Input feature tensor (B, C, H, W).
@@ -99,7 +99,8 @@ class MSCA(nn.Module):
         channel_weights = self.channel_attention(x)  # (B, C, 1, 1)
 
         # Broadcast multiply: spatial features weighted by channel importance
-        output = f_fused * channel_weights
+        # Residual connection: output = input + calibrated features
+        output = x + f_fused * channel_weights
 
         return output
 
@@ -118,6 +119,7 @@ class MSCALight(nn.Module):
         norm_layer: nn.Module = nn.BatchNorm2d,
     ):
         super().__init__()
+        self.dim = dim  # Required attribute for compatibility with other modules
         self.dwconv_3x3 = nn.Sequential(
             nn.Conv2d(dim, dim, 3, 1, 1, groups=dim, bias=False),
             norm_layer(dim),
@@ -130,7 +132,7 @@ class MSCALight(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.dwconv_3x3(x) + self.dwconv_5x5(x)
+        return x + self.dwconv_3x3(x) + self.dwconv_5x5(x)  # Residual connection
 
 
 class SEOnly(nn.Module):
@@ -138,6 +140,7 @@ class SEOnly(nn.Module):
 
     def __init__(self, dim: int, reduction: int = 16):
         super().__init__()
+        self.dim = dim  # Required attribute for compatibility with other modules
         mid_channels = max(dim // reduction, 4)
         self.se = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),

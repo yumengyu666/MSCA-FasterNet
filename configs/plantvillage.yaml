@@ -4,7 +4,7 @@
 dataset:
   name: plantvillage
   root_dir: data/PlantVillage
-  num_classes: 38
+  num_classes: 15
   input_size: 224
   use_weighted_sampler: false  # PlantVillage is relatively balanced
 

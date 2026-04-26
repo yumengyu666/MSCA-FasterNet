@@ -11,6 +11,9 @@ import argparse
 import json
 import numpy as np
 
+# Fix OpenMP duplicate library error on Windows
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -32,6 +35,7 @@ from utils import (
     compute_flops,
     measure_fps,
     compute_confusion_matrix,
+    compute_f1_score,
     load_checkpoint,
 )
 
@@ -49,10 +53,14 @@ def parse_args():
     parser.add_argument("--gpu", type=str, default="0")
     parser.add_argument("--model", type=str, default="full",
                         choices=["baseline", "msca", "fusion", "full"])
-    parser.add_argument("--compute-flops", action="store_true",
+    parser.add_argument("--compute-flops", action="store_true", default=True,
                         help="Compute FLOPs and parameter count")
-    parser.add_argument("--measure-fps", action="store_true",
+    parser.add_argument("--no-compute-flops", action="store_true",
+                        help="Skip FLOPs computation")
+    parser.add_argument("--measure-fps", action="store_true", default=True,
                         help="Measure inference FPS")
+    parser.add_argument("--no-measure-fps", action="store_true",
+                        help="Skip FPS measurement")
     parser.add_argument("--save-predictions", action="store_true",
                         help="Save all predictions for visualization")
     parser.add_argument("--output-dir", type=str, default="results")
@@ -63,7 +71,7 @@ def parse_args():
 def build_model_from_checkpoint(args, device):
     """Reconstruct model from checkpoint config."""
     # Load checkpoint to get config
-    ckpt = torch.load(args.checkpoint, map_location="cpu")
+    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
 
     # Try to get config from checkpoint
     if "config" in ckpt:
@@ -134,6 +142,10 @@ def evaluate(model, dataloader, device, num_classes):
     # Confusion matrix
     cm = compute_confusion_matrix(all_preds, all_labels, num_classes)
 
+    # F1-scores (critical for imbalanced datasets)
+    f1_macro = compute_f1_score(all_preds, all_labels, num_classes, average="macro")
+    f1_weighted = compute_f1_score(all_preds, all_labels, num_classes, average="weighted")
+
     # Find most confused pairs
     confused_pairs = []
     for i in range(num_classes):
@@ -145,6 +157,8 @@ def evaluate(model, dataloader, device, num_classes):
     results = {
         "top1_acc": top1_acc,
         "top5_acc": top5_acc,
+        "f1_macro": f1_macro,
+        "f1_weighted": f1_weighted,
         "per_class_acc_mean": np.mean(list(per_class_acc.values())),
         "per_class_acc_std": np.std(list(per_class_acc.values())),
         "most_confused_pairs": [
@@ -160,6 +174,10 @@ def main():
     args = parse_args()
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        logger.info(f"Using GPU: {torch.cuda.get_device_name(device)}")
+    else:
+        logger.warning("CUDA not available! Running on CPU!")
 
     logger = setup_logger(name="evaluate", log_dir=args.output_dir)
 
@@ -187,11 +205,13 @@ def main():
 
     logger.info(f"Top-1 Accuracy: {results['top1_acc']:.2f}%")
     logger.info(f"Top-5 Accuracy: {results['top5_acc']:.2f}%")
+    logger.info(f"F1 (Macro): {results['f1_macro']:.2f}%")
+    logger.info(f"F1 (Weighted): {results['f1_weighted']:.2f}%")
     logger.info(f"Per-class Acc Mean: {results['per_class_acc_mean']:.2f}%")
     logger.info(f"Per-class Acc Std: {results['per_class_acc_std']:.2f}%")
 
     # Compute FLOPs
-    if args.compute_flops:
+    if args.compute_flops and not args.no_compute_flops:
         flop_results = compute_flops(model)
         logger.info(f"Parameters: {flop_results['params_M']:.2f}M")
         if flop_results["flops_G"] > 0:
@@ -199,7 +219,7 @@ def main():
         results.update(flop_results)
 
     # Measure FPS
-    if args.measure_fps:
+    if args.measure_fps and not args.no_measure_fps:
         fps_results = measure_fps(model, device=str(device))
         logger.info(f"FPS: {fps_results['fps']:.1f} | Latency: {fps_results['latency_ms']:.2f}ms")
         results.update(fps_results)

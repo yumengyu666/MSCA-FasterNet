@@ -1,0 +1,35 @@
+# MSCA-FasterNet Dependencies
+# Python 3.8-3.10 recommended
+
+# Core
+torch>=1.12.0
+torchvision>=0.13.0
+numpy>=1.21.0
+
+# Model
+timm>=0.9.0  # PyTorch Image Models (comparison models)
+
+# Data
+opencv-python>=4.5.0
+Pillow>=9.0.0
+scikit-learn>=1.0.0  # t-SNE, metrics
+
+# Training
+fvcore>=0.3.0  # FLOPs calculation (or thop)
+# thop>=0.1.1  # Alternative FLOPs calculation
+
+# Visualization
+matplotlib>=3.5.0
+seaborn>=0.11.0
+grad-cam>=1.4.0  # Grad-CAM visualization (optional, we implement our own)
+
+# Utilities
+PyYAML>=6.0
+tqdm>=4.64.0
+tensorboard>=2.9.0  # Optional: training visualization
+
+# Mixed precision (included in PyTorch 1.6+)
+# torch.cuda.amp
+
+# Optional: Weights & Biases for experiment tracking
+# wandb>=0.13.0

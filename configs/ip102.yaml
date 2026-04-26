@@ -1,0 +1,62 @@
+# IP102 Dataset Training Configuration
+# Default configuration for IP102 insect pest recognition
+
+dataset:
+  name: ip102
+  root_dir: data/IP102
+  num_classes: 102
+  input_size: 224
+  use_weighted_sampler: true
+
+model:
+  name: full  # baseline / msca / fusion / full
+  embed_dim: 40
+  depths: [1, 2, 8, 2]
+  n_div: 4
+  mlp_ratio: 2.0
+  msca_reduction: 16
+  msca_stage: 2  # 0-based, Stage3
+  msca_block_indices: [6, 7]  # Last 2 blocks of Stage3
+  fusion_dim: 160
+  fusion_target_size: 14
+  dropout: 0.0
+
+training:
+  epochs: 150
+  batch_size: 64
+  lr: 4.0e-4
+  min_lr: 1.0e-6
+  weight_decay: 0.005
+  label_smoothing: 0.1
+  drop_path: 0.05
+  warmup_epochs: 10
+  scheduler: cosine
+  amp: true
+  clip_grad: 5.0
+
+  # Progressive unfreezing
+  freeze_epochs: 50
+  unfreeze_lr_factor: 0.1
+
+  # Data augmentation
+  mixup_alpha: 0.2
+  cutmix_alpha: 1.0
+  mix_prob: 0.5
+
+  # Augmentation
+  random_resized_crop:
+    scale: [0.7, 1.0]
+  horizontal_flip: 0.5
+  vertical_flip: 0.5
+  color_jitter:
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.1
+
+system:
+  workers: 4
+  seed: 42
+  gpu: "0"
+  output_dir: checkpoints
+  save_freq: 10
+  print_freq: 50

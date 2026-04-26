@@ -1,0 +1,61 @@
+# Base configuration shared across all experiments
+
+experiment:
+  project_name: MSCA-FasterNet
+  description: "Lightweight Crop Pest and Disease Identification Based on Improved FasterNet"
+  version: "1.0"
+
+defaults:
+  seed: 42
+  input_size: 224
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+# Ablation experiment configurations
+ablation:
+  - name: A_baseline
+    model: baseline
+    description: "FasterNet-T0 原版（基线）"
+
+  - name: B_msca_only
+    model: msca
+    description: "A + MSCA（验证注意力模块贡献）"
+
+  - name: C_fusion_only
+    model: fusion
+    description: "A + 跨层融合（验证融合策略贡献）"
+
+  - name: D_full_model
+    model: full
+    description: "A + MSCA + 融合（完整模型）"
+
+# Comparison models
+comparison_models:
+  - name: MobileNetV3-Small
+    timm_name: mobilenetv3_small_100
+    year: 2019
+
+  - name: ShuffleNetV2-x0.5
+    timm_name: shufflenetv2_x0_5
+    year: 2018
+
+  - name: GhostNetV2
+    timm_name: ghostnetv2_100
+    year: 2022
+
+  - name: EfficientNet-Lite0
+    timm_name: efficientnet_lite0
+    year: 2020
+
+# Target journals
+journals:
+  - name: Agriculture
+    publisher: MDPI
+    cas_ranking: Q2/Q3
+    if: 3.3
+
+  - name: Applied Sciences
+    publisher: MDPI
+    cas_ranking: Q3/Q4
+    if: 2.5

@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# PyTorch
+*.pth
+*.pt
+!checkpoints/.gitkeep
+
+# Data
+data/IP102/
+data/PlantVillage/
+*.zip
+*.tar.gz
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_metadata
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+tensorboard/
+*.log
+
+# Results (keep structure, not data)
+results/*.json
+results/*.npz
+results/*.png
+!results/.gitkeep
+
+# WorkBuddy
+.workbuddy/
+
+# Environment
+.env
+venv/
+.venv/
+env/
+
+# Distribution
+*.whl

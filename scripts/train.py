@@ -21,6 +21,7 @@ import argparse
 import json
 import time
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -578,5 +579,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import numpy as np  # Needed for mixup/cutmix
     main()

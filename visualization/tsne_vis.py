@@ -6,6 +6,7 @@ to show that MSCA produces better class-discriminative features.
 
 import os
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from typing import Optional, List
@@ -30,7 +31,6 @@ def extract_features(model, dataloader, device, max_samples: int = 5000):
     count = 0
 
     with torch.no_grad():
-        import torch
         for images, labels in dataloader:
             if count >= max_samples:
                 break

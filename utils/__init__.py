@@ -1,7 +1,7 @@
 """Utility functions for training, evaluation and visualization."""
 
 from .logger import setup_logger
-from .metrics import compute_metrics, compute_flops, measure_fps
+from .metrics import compute_metrics, compute_flops, measure_fps, compute_confusion_matrix
 from .sampler import WeightedSamplerBuilder
 from .misc import (
     set_seed,
@@ -11,6 +11,8 @@ from .misc import (
     AverageMeter,
     ProgressMeter,
     warmup_lr_scheduler,
+    freeze_backbone,
+    unfreeze_all,
 )
 
 __all__ = [
@@ -18,6 +20,7 @@ __all__ = [
     "compute_metrics",
     "compute_flops",
     "measure_fps",
+    "compute_confusion_matrix",
     "WeightedSamplerBuilder",
     "set_seed",
     "get_gradcam_target_layer",
@@ -26,4 +29,6 @@ __all__ = [
     "AverageMeter",
     "ProgressMeter",
     "warmup_lr_scheduler",
+    "freeze_backbone",
+    "unfreeze_all",
 ]

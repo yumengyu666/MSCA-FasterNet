@@ -40,6 +40,7 @@ class CrossLayerFusion(nn.Module):
         s4_channels: Stage4 output channels (default: 160).
         fusion_dim: Target fusion dimension (default: 160, aligned with Stage3).
         target_size: Target spatial size (default: 14, aligned with Stage3).
+            If 0, auto-detect from Stage3 spatial size at runtime.
         use_msca: Whether to apply MSCA after fusion (default: True).
         act_layer: Activation layer. Default: nn.GELU.
         norm_layer: Normalization layer. Default: nn.BatchNorm2d.
@@ -77,13 +78,11 @@ class CrossLayerFusion(nn.Module):
         )
 
         # === Spatial Alignment ===
-        # Stage2: 28x28 -> 14x14 (downsample)
+        # Stage2: downsample via AvgPool (factor=2 relative to Stage3)
         self.s2_downsample = nn.AvgPool2d(kernel_size=2, stride=2)
 
-        # Stage4: 7x7 -> 14x14 (upsample)
-        self.s4_upsample = nn.Upsample(
-            size=target_size, mode="bilinear", align_corners=False
-        )
+        # Stage4: upsample (will be done dynamically in forward)
+        # No longer use fixed nn.Upsample — compute target size at runtime
 
         # === Fusion Compression ===
         concat_dim = fusion_dim * 3  # 480 = 160 * 3
@@ -111,32 +110,42 @@ class CrossLayerFusion(nn.Module):
         """Fuse features from Stage2, Stage3, and Stage4.
 
         Args:
-            s2_feat: Stage2 feature (B, 80, 28, 28).
-            s3_feat: Stage3 feature (B, 160, 14, 14).
-            s4_feat: Stage4 feature (B, 320, 7, 7).
+            s2_feat: Stage2 feature (B, 80, H2, W2).
+            s3_feat: Stage3 feature (B, 160, H3, W3).
+            s4_feat: Stage4 feature (B, 320, H4, W4).
 
         Returns:
-            Fused feature tensor (B, 160, 14, 14).
+            Fused feature tensor (B, 160, H3, W3).
         """
+        # Determine target spatial size from Stage3
+        target_h, target_w = s3_feat.shape[2], s3_feat.shape[3]
+
         # Channel alignment
-        s2 = self.s2_align(s2_feat)   # (B, 160, 28, 28)
-        # s3: no alignment needed     # (B, 160, 14, 14)
-        s4 = self.s4_align(s4_feat)   # (B, 160, 7, 7)
+        s2 = self.s2_align(s2_feat)   # (B, 160, H2, W2)
+        # s3: no alignment needed     # (B, 160, H3, W3)
+        s4 = self.s4_align(s4_feat)   # (B, 160, H4, W4)
 
         # Spatial alignment
-        s2 = self.s2_downsample(s2)   # (B, 160, 14, 14)
-        # s3: already 14x14
-        s4 = self.s4_upsample(s4)     # (B, 160, 14, 14)
+        s2 = self.s2_downsample(s2)   # (B, 160, H2/2, W2/2)
+        # If still not matching target, use adaptive pool
+        if s2.shape[2] != target_h or s2.shape[3] != target_w:
+            s2 = nn.functional.adaptive_avg_pool2d(s2, (target_h, target_w))
+
+        # s3: already at target size
+
+        # Stage4: upsample to match Stage3
+        s4 = nn.functional.interpolate(s4, size=(target_h, target_w),
+                                        mode="bilinear", align_corners=False)
 
         # Channel concatenation
-        fused = torch.cat([s2, s3_feat, s4], dim=1)  # (B, 480, 14, 14)
+        fused = torch.cat([s2, s3_feat, s4], dim=1)  # (B, 480, H3, W3)
 
         # Compression
-        fused = self.fusion_compress(fused)  # (B, 160, 14, 14)
+        fused = self.fusion_compress(fused)  # (B, 160, H3, W3)
 
         # MSCA calibration
         if self.use_msca:
-            fused = self.fusion_msca(fused)  # (B, 160, 14, 14)
+            fused = self.fusion_msca(fused)  # (B, 160, H3, W3)
 
         return fused
 
@@ -145,6 +154,7 @@ class TwoStageFusion(nn.Module):
     """Simplified fusion using only Stage3 + Stage4 (for ablation).
 
     Used in ablation experiments to test whether Stage2 is necessary.
+    Spatial size is auto-detected from Stage3 at runtime.
     """
 
     def __init__(
@@ -161,9 +171,6 @@ class TwoStageFusion(nn.Module):
         self.s4_align = nn.Sequential(
             nn.Conv2d(s4_channels, fusion_dim, 1, bias=False),
             norm_layer(fusion_dim),
-        )
-        self.s4_upsample = nn.Upsample(
-            size=target_size, mode="bilinear", align_corners=False
         )
 
         concat_dim = fusion_dim * 2  # 320
@@ -183,8 +190,10 @@ class TwoStageFusion(nn.Module):
     def forward(
         self, s3_feat: torch.Tensor, s4_feat: torch.Tensor
     ) -> torch.Tensor:
+        target_h, target_w = s3_feat.shape[2], s3_feat.shape[3]
         s4 = self.s4_align(s4_feat)
-        s4 = self.s4_upsample(s4)
+        s4 = nn.functional.interpolate(s4, size=(target_h, target_w),
+                                        mode="bilinear", align_corners=False)
         fused = torch.cat([s3_feat, s4], dim=1)
         fused = self.fusion_compress(fused)
         if self.use_msca:

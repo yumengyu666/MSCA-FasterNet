@@ -16,6 +16,9 @@ import torch.nn as nn
 import numpy as np
 import torchvision.transforms as transforms
 from PIL import Image
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -240,10 +243,6 @@ def run_tsne(args, device):
 
 
 def main():
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     args = parse_args()
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
 

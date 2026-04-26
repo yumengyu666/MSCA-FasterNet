@@ -77,10 +77,10 @@ def build_model_from_checkpoint(args, device):
     if "config" in ckpt:
         config = ckpt["config"]
         num_classes = config.get("num_classes",
-                                102 if config.get("dataset") == "ip102" else 38)
+                                102 if config.get("dataset") == "ip102" else 15)
         model_name = config.get("model", args.model)
     else:
-        num_classes = 102 if args.dataset == "ip102" else 38
+        num_classes = 102 if args.dataset == "ip102" else 15
         model_name = args.model
 
     model_builders = {

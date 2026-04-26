@@ -11,6 +11,10 @@ import os
 import sys
 import time
 import json
+
+# Fix OpenMP duplicate library error on Windows
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -280,12 +284,12 @@ def test_AMP_training():
         print("  [SKIP] No GPU available, AMP test skipped")
         return True
 
-    from torch.cuda.amp import GradScaler, autocast
+    from torch.amp import GradScaler, autocast
 
     model = fasternet_t0_full(num_classes=10).cuda()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-    scaler = GradScaler()
+    scaler = GradScaler("cuda")
 
     dataset = SyntheticDataset(num_samples=16, num_classes=10, img_size=224)
     loader = DataLoader(dataset, batch_size=8)
@@ -294,7 +298,7 @@ def test_AMP_training():
     for images, labels in loader:
         images, labels = images.cuda(), labels.cuda()
 
-        with autocast():
+        with autocast(device_type="cuda"):
             outputs = model(images)
             loss = criterion(outputs, labels)
 

@@ -13,6 +13,10 @@ Usage:
 
 import os
 import sys
+
+# Fix OpenMP duplicate library error on Windows
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import torch
 import torch.nn as nn
 

@@ -19,6 +19,9 @@ import argparse
 import json
 import subprocess
 
+# Fix OpenMP duplicate library error on Windows
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
@@ -116,7 +119,7 @@ def run_comparison_model(args, model_name):
     if epochs is None:
         epochs = 150 if args.dataset == "ip102" else 100
 
-    num_classes = 102 if args.dataset == "ip102" else 38
+    num_classes = 102 if args.dataset == "ip102" else 15
 
     cmd = [
         sys.executable, "scripts/train_comparison.py",

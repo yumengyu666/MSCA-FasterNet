@@ -35,7 +35,7 @@ class MSCAFasterNet(nn.Module):
             -> GAP -> FC(160 -> num_classes)
 
     Args:
-        num_classes: Number of output classes (102 for IP102, 38 for PlantVillage).
+        num_classes: Number of output classes (102 for IP102, 15 for PlantVillage).
         embed_dim: Embedding dimension. Default: 40.
         depths: Block counts per stage. Default: [1, 2, 8, 2].
         n_div: PConv channel division ratio. Default: 4.

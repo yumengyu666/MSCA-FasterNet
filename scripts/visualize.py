@@ -11,6 +11,9 @@ import os
 import sys
 import argparse
 
+# Fix OpenMP duplicate library error on Windows
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -74,7 +77,7 @@ def load_model_from_checkpoint(checkpoint_path, model_type, num_classes, device)
 
 def run_gradcam(args, device):
     """Generate Grad-CAM visualizations."""
-    num_classes = 102 if args.dataset == "ip102" else 38
+    num_classes = 102 if args.dataset == "ip102" else 15
 
     # Load improved model
     improved_model = load_model_from_checkpoint(args.checkpoint, "full", num_classes, device)
@@ -143,7 +146,7 @@ def run_gradcam(args, device):
 
 def run_confusion(args, device):
     """Generate confusion matrix visualization."""
-    num_classes = 102 if args.dataset == "ip102" else 38
+    num_classes = 102 if args.dataset == "ip102" else 15
     model = load_model_from_checkpoint(args.checkpoint, "full", num_classes, device)
 
     data_dir = args.data_dir or f"data/{args.dataset.upper()}"
@@ -193,7 +196,7 @@ def run_confusion(args, device):
 
 def run_tsne(args, device):
     """Generate t-SNE visualization."""
-    num_classes = 102 if args.dataset == "ip102" else 38
+    num_classes = 102 if args.dataset == "ip102" else 15
 
     # Load improved model
     improved_model = load_model_from_checkpoint(args.checkpoint, "full", num_classes, device)

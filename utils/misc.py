@@ -59,7 +59,7 @@ def load_checkpoint(
     Returns:
         Checkpoint metadata dict (epoch, best_acc, etc.).
     """
-    checkpoint = torch.load(filepath, map_location=device)
+    checkpoint = torch.load(filepath, map_location=device, weights_only=False)
 
     model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -94,7 +94,7 @@ class AverageMeter:
         self.avg = self.sum / self.count
 
     def __str__(self):
-        fmtstr = f"{self.name} {self.fmt} ({self.fmt})"
+        fmtstr = f"{self.name} {{{self.fmt}}} ({{{self.fmt}}})"
         return fmtstr.format(self.val, self.avg)
 
 

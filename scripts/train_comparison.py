@@ -204,10 +204,28 @@ def main():
     use_cuda = device.type == "cuda"
     scaler = GradScaler("cuda") if use_cuda else None
 
-    # Progressive freezing (same as main train.py)
+    # Progressive freezing (safe for any model architecture)
     if args.freeze_epochs > 0:
-        freeze_backbone(model, freeze_stages=(0, 1))
-        logger.info(f"Backbone frozen for first {args.freeze_epochs} epochs")
+        # Only freeze parameters, don't assume specific architecture
+        frozen_count = 0
+        total_count = 0
+        for name, param in model.named_parameters():
+            total_count += 1
+            # Freeze early feature extraction layers
+            # For timm models: features.0, features.1, etc.
+            # For our models: backbone.stages.0, backbone.stages.1
+            if any(name.startswith(prefix) for prefix in [
+                "features.0", "features.1", "features.2",
+                "conv_stem",
+                "backbone.stages.0", "backbone.stages.1",
+                "backbone.embedding",
+            ]):
+                param.requires_grad = False
+                frozen_count += 1
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        logger.info(f"Frozen {frozen_count}/{total_count} layers for first {args.freeze_epochs} epochs")
+        logger.info(f"Trainable: {trainable/1e6:.2f}M / {total/1e6:.2f}M params")
 
     best_acc = 0.0
 
@@ -215,12 +233,13 @@ def main():
         if epoch < args.warmup_epochs:
             warmup_lr_scheduler(optimizer, args.warmup_epochs, args.lr, epoch)
 
-        # Progressive unfreezing
+        # Progressive unfreezing (safe for any model)
         if args.freeze_epochs > 0 and epoch == args.freeze_epochs:
-            unfreeze_all(model)
+            for param in model.parameters():
+                param.requires_grad = True
             for param_group in optimizer.param_groups:
                 param_group["lr"] *= 0.1
-            logger.info(f"Unfrozen backbone at epoch {epoch}")
+            logger.info(f"Unfrozen all layers at epoch {epoch}")
 
         # Train
         model.train()

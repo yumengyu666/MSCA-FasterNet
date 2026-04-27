@@ -8,10 +8,11 @@ dist/
 build/
 *.egg
 
-# PyTorch
+# PyTorch (tracked via Git LFS)
 *.pth
 *.pt
 !checkpoints/.gitkeep
+!checkpoints/**/*.pth
 
 # Data
 data/IP102/
@@ -45,6 +46,10 @@ results/*.json
 results/*.npz
 results/*.png
 !results/.gitkeep
+
+# Debug/test runs (local only, never push)
+checkpoints/test_run/
+checkpoints/test_run_gpu/
 
 # WorkBuddy
 .workbuddy/

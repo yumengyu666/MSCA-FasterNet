@@ -1,0 +1,10 @@
+{
+  "dataset": "plantvillage",
+  "model": "full",
+  "best_val_acc1": 99.12536443148689,
+  "test_acc1": 99.17395529640427,
+  "test_acc5": 100.0,
+  "test_loss": 0.612625993027979,
+  "total_params_M": 2.397021,
+  "epochs": 100
+}

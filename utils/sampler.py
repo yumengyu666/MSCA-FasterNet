@@ -22,11 +22,20 @@ class WeightedSamplerBuilder:
         Returns:
             WeightedRandomSampler instance, or None if dataset is empty.
         """
-        # Extract labels
+        # Extract labels efficiently: try to get from .samples attribute first,
+        # fall back to iteration only if needed.
         labels = []
-        for i in range(len(dataset)):
-            _, label = dataset[i][:2]
-            labels.append(label)
+        
+        # Method 1: Fast path - read labels from dataset's internal sample list
+        # Avoids calling __getitem__ which opens every image via PIL
+        if hasattr(dataset, 'samples') and len(dataset.samples) > 0:
+            for _, label in dataset.samples:
+                labels.append(label)
+        else:
+            # Fallback: iterate (slow for image datasets)
+            for i in range(len(dataset)):
+                _, label = dataset[i][:2]
+                labels.append(label)
 
         if len(labels) == 0:
             return None

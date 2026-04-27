@@ -28,7 +28,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.amp import GradScaler, autocast
+try:
+    from torch.amp import GradScaler, autocast
+    _AMP_NEW_API = True
+except ImportError:
+    # PyTorch < 2.0 / 2.1 compatibility
+    from torch.cuda.amp import GradScaler, autocast
+    _AMP_NEW_API = False
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -66,6 +72,8 @@ def parse_args():
                         help="Dataset name")
     parser.add_argument("--data-dir", type=str, default=None,
                         help="Dataset root directory")
+    parser.add_argument("--cache-dir", type=str, default=None,
+                        help="HDF5 cache file path (enables ultra-fast loading)")
 
     # Model
     parser.add_argument("--model", type=str, default="full",
@@ -183,6 +191,37 @@ def build_model(args):
 
 def build_dataloaders(args, num_classes):
     """Build train/val/test dataloaders."""
+    # 如果指定了缓存目录，使用HDF5高速缓存
+    if args.cache_dir:
+        from datasets.hdf5_dataset import build_cached_dataloader
+
+        print(f"[Cache] 📦 使用HDF5缓存模式: {args.cache_dir}")
+
+        train_loader = build_cached_dataloader(
+            hdf5_path=args.cache_dir,
+            split="train",
+            batch_size=args.batch_size,
+            num_workers=args.workers,
+            input_size=224,
+            use_weighted_sampler=True,
+        )
+        val_loader = build_cached_dataloader(
+            hdf5_path=args.cache_dir,
+            split="val",
+            batch_size=args.batch_size,
+            num_workers=args.workers,
+            input_size=224,
+        )
+        test_loader = build_cached_dataloader(
+            hdf5_path=args.cache_dir,
+            split="test",
+            batch_size=args.batch_size,
+            num_workers=args.workers,
+            input_size=224,
+        )
+        return train_loader, val_loader, test_loader
+
+    # 原始数据加载方式（无缓存）
     data_dir = args.data_dir
     if data_dir is None:
         data_dir = f"data/{args.dataset.upper()}"
@@ -329,12 +368,16 @@ def train_one_epoch(
         use_amp = args.amp and not args.no_amp
 
         if use_amp:
-            with autocast(device_type="cuda"):
-                outputs = model(images)
-                if use_mix:
-                    loss = mixup_criterion(criterion, outputs, labels_a, labels_b, lam)
-                else:
-                    loss = criterion(outputs, labels)
+            if _AMP_NEW_API:
+                with autocast(device_type="cuda"):
+                    outputs = model(images)
+            else:
+                with autocast():
+                    outputs = model(images)
+            if use_mix:
+                loss = mixup_criterion(criterion, outputs, labels_a, labels_b, lam)
+            else:
+                loss = criterion(outputs, labels)
 
             optimizer.zero_grad()
             scaler.scale(loss).backward()
@@ -479,7 +522,7 @@ def main():
     )
 
     # AMP scaler
-    scaler = GradScaler("cuda") if use_amp else None
+    scaler = GradScaler("cuda" if _AMP_NEW_API else 1) if use_amp else None
 
     # Resume
     start_epoch = 0

@@ -155,6 +155,8 @@ def evaluate(model, dataloader, device, num_classes):
     confused_pairs.sort(key=lambda x: x[2], reverse=True)
 
     results = {
+        "model": model_name,
+        "dataset": args.dataset,
         "top1_acc": top1_acc,
         "top5_acc": top5_acc,
         "f1_macro": f1_macro,
@@ -217,6 +219,8 @@ def main():
         logger.info(f"Parameters: {flop_results['params_M']:.2f}M")
         if flop_results["flops_G"] > 0:
             logger.info(f"FLOPs: {flop_results['flops_G']:.3f}G")
+            if flop_results.get("macs_G", -1) > 0:
+                logger.info(f"MACs: {flop_results['macs_G']:.3f}G")
         results.update(flop_results)
 
     # Measure FPS

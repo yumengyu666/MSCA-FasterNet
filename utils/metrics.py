@@ -98,7 +98,7 @@ def compute_metrics(
 
 
 def compute_flops(model: torch.nn.Module, input_size: tuple = (1, 3, 224, 224)) -> Dict[str, float]:
-    """Compute model FLOPs and parameter count.
+    """Compute model FLOPs, MACs, and parameter count.
 
     Uses fvcore if available, falls back to manual parameter counting.
 
@@ -107,7 +107,7 @@ def compute_flops(model: torch.nn.Module, input_size: tuple = (1, 3, 224, 224)) 
         input_size: Input tensor shape.
 
     Returns:
-        Dictionary with params (M) and FLOPs (G).
+        Dictionary with params (M), FLOPs (G), and MACs (G).
     """
     # Parameter count (always available)
     total_params = sum(p.numel() for p in model.parameters())
@@ -127,7 +127,12 @@ def compute_flops(model: torch.nn.Module, input_size: tuple = (1, 3, 224, 224)) 
         with torch.no_grad():
             flop_analysis = FlopCountAnalysis(model, dummy_input)
             flops = flop_analysis.total()
+            # fvcore reports total FLOPs; MACs ≈ FLOPs / 2 for most conv ops
+            macs = flop_analysis.total().item() if hasattr(flop_analysis.total(), 'item') else flop_analysis.total()
+            # fvcore uses total flops (multiply-adds counted as 2 ops)
+            macs_g = macs / 1e9  # This is actually total FLOPs from fvcore
         results["flops_G"] = flops / 1e9
+        results["macs_G"] = macs_g
     except ImportError:
         try:
             from thop import profile
@@ -137,8 +142,10 @@ def compute_flops(model: torch.nn.Module, input_size: tuple = (1, 3, 224, 224)) 
             with torch.no_grad():
                 flops, _ = profile(model, inputs=(dummy_input,), verbose=False)
             results["flops_G"] = flops / 1e9
+            results["macs_G"] = flops / 2 / 1e9  # thop returns MACs
         except ImportError:
             results["flops_G"] = -1  # Not available
+            results["macs_G"] = -1
             print("Warning: Neither fvcore nor thop available for FLOPs calculation.")
 
     return results

@@ -108,10 +108,7 @@ class FasterNetBlock(nn.Module):
             norm_layer(mlp_hidden_dim),
             act_layer(),
         )
-        self.pwconv2 = nn.Sequential(
-            nn.Conv2d(mlp_hidden_dim, dim, 1, 1, 0, bias=False),
-            norm_layer(dim),
-        )
+        self.pwconv2 = nn.Conv2d(mlp_hidden_dim, dim, 1, 1, 0, bias=False)
 
         # DropPath (Stochastic Depth) for regularization
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -150,12 +147,20 @@ class FasterNetStage(nn.Module):
         msca_indices: Optional[List[int]] = None,
         msca_module_factory=None,
         drop_path_rate: float = 0.0,
+        drop_path_rates: Optional[List[float]] = None,
     ):
         super().__init__()
         self.depth = depth
 
         if msca_indices is None:
             msca_indices = []
+
+        # Support both legacy (uniform rate) and new (per-block rates)
+        if drop_path_rates is not None:
+            assert len(drop_path_rates) == depth, \
+                f"drop_path_rates length {len(drop_path_rates)} != depth {depth}"
+        else:
+            drop_path_rates = [drop_path_rate] * depth
 
         blocks = []
         for i in range(depth):
@@ -164,8 +169,7 @@ class FasterNetStage(nn.Module):
             if i in msca_indices and msca_module_factory is not None:
                 msca = msca_module_factory(dim)
 
-            # Stochastic depth decay rule: linearly increase drop_path_rate
-            # from 0 to drop_path_rate across all blocks in all stages
+            # Stochastic depth: linearly increasing rate per block
             blocks.append(
                 FasterNetBlock(
                     dim=dim,
@@ -175,7 +179,7 @@ class FasterNetStage(nn.Module):
                     norm_layer=norm_layer,
                     pconv_fw=pconv_fw,
                     msca_module=msca,
-                    drop_path=drop_path_rate,
+                    drop_path=drop_path_rates[i],
                 )
             )
         self.blocks = nn.Sequential(*blocks)
@@ -289,6 +293,8 @@ class FasterNet(nn.Module):
             msca_factory = msca_config.get("factory", None)
 
         # Compute per-block drop path rates with linear decay
+        # Standard stochastic depth: rate linearly increases from 0 to drop_path_rate
+        # Reference: Huang et al., "Deep Networks with Stochastic Depth", ECCV 2016
         total_blocks = sum(depths)
         block_idx = 0
         for i in range(len(depths)):
@@ -299,11 +305,14 @@ class FasterNet(nn.Module):
                 stage_msca_indices = msca_indices
                 stage_msca_factory = msca_factory
 
-            # Average drop_path_rate for this stage's blocks
-            # Linear decay: first block gets 0, last block gets drop_path_rate
-            stage_dpr = drop_path_rate  # simplified: uniform rate per stage
+            # Linear decay: first block gets ~0, last block gets drop_path_rate
+            # Compute per-block rates for this stage
+            dpr_list = [
+                drop_path_rate * block_idx / max(total_blocks - 1, 1)
+                for block_idx in range(block_idx, block_idx + depths[i])
+            ]
 
-            # Stage
+            # Stage (pass list of per-block dpr)
             self.stages.append(
                 FasterNetStage(
                     dim=dims[i],
@@ -315,7 +324,7 @@ class FasterNet(nn.Module):
                     pconv_fw=pconv_fw,
                     msca_indices=stage_msca_indices,
                     msca_module_factory=stage_msca_factory,
-                    drop_path_rate=stage_dpr,
+                    drop_path_rates=dpr_list,
                 )
             )
             block_idx += depths[i]

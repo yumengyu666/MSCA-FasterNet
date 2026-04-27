@@ -40,6 +40,7 @@ from models.msca_fasternet import (
     fasternet_t0_with_fusion,
     fasternet_t0_full,
 )
+from models.attention_models import ATTENTION_MODEL_BUILDERS
 from datasets.ip102 import build_ip102_dataloader
 from datasets.plantvillage import build_plantvillage_dataloader
 from utils import (
@@ -68,8 +69,9 @@ def parse_args():
 
     # Model
     parser.add_argument("--model", type=str, default="full",
-                        choices=["baseline", "msca", "fusion", "full"],
-                        help="Model variant: baseline/msca/fusion/full")
+                        choices=["baseline", "msca", "fusion", "full",
+                                 "attention_se", "attention_cbam", "attention_eca", "attention_sk"],
+                        help="Model variant: baseline/msca/fusion/full or attention_* for comparison")
     parser.add_argument("--num-classes", type=int, default=None,
                         help="Number of classes (auto-detected if None)")
     parser.add_argument("--pretrained", type=str, default=None,
@@ -149,6 +151,7 @@ def build_model(args):
     if num_classes is None:
         num_classes = 102 if args.dataset == "ip102" else 15
 
+    # Standard ablation models
     model_builders = {
         "baseline": fasternet_t0_baseline,
         "msca": fasternet_t0_with_msca,
@@ -156,13 +159,24 @@ def build_model(args):
         "full": fasternet_t0_full,
     }
 
+    # Merge attention comparison models
+    model_builders.update(ATTENTION_MODEL_BUILDERS)
+
     builder = model_builders[args.model]
-    model = builder(
-        num_classes=num_classes,
-        msca_reduction=args.msca_reduction,
-        pretrained_backbone=args.pretrained,
-        dropout=0.0,
-    )
+
+    # Attention comparison models use different interface
+    if args.model.startswith("attention_"):
+        model = builder(
+            num_classes=num_classes,
+            pretrained_backbone=args.pretrained,
+        )
+    else:
+        model = builder(
+            num_classes=num_classes,
+            msca_reduction=args.msca_reduction,
+            pretrained_backbone=args.pretrained,
+            dropout=0.0,
+        )
 
     return model, num_classes
 

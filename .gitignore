@@ -8,17 +8,17 @@ dist/
 build/
 *.egg
 
-# PyTorch (tracked via Git LFS)
+# PyTorch model weights (large files)
 *.pth
 *.pt
 !checkpoints/.gitkeep
-!checkpoints/fasternet_t0.pth
 
-# Data
-data/IP102/
-data/PlantVillage/
+# Data directories (DO NOT push)
+data/
 *.zip
 *.tar.gz
+*.h5
+*.hdf5
 
 # Jupyter
 .ipynb_checkpoints/
@@ -36,23 +36,20 @@ data/PlantVillage/
 Thumbs.db
 desktop.ini
 
-# Logs
+# Logs (keep results_v6 logs)
 logs/
 tensorboard/
-*.log
 
-# Results (keep structure, not data)
-results/*.json
-results/*.npz
-results/*.png
+# Old results (keep results_v6)
+results/
 !results/.gitkeep
 
-# Debug/test runs (local only, never push)
+# Debug/test runs
 checkpoints/test_run/
 checkpoints/test_run_gpu/
 checkpoints/timm_weights/
 
-# AutoDL scripts (local only)
+# AutoDL deploy scripts (local only)
 autodl_overnight.sh
 run_overnight.sh
 
@@ -67,3 +64,6 @@ env/
 
 # Distribution
 *.whl
+
+# Diagnostics
+diagnose_fusion.py

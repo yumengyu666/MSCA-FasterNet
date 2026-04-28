@@ -1,0 +1,10 @@
+{
+  "dataset": "ip102",
+  "model": "baseline",
+  "best_val_acc1": 63.17438981718256,
+  "test_acc1": 63.996517119949466,
+  "test_acc5": 86.06878538551048,
+  "test_loss": 2.068368158602019,
+  "total_params_M": 2.247642,
+  "epochs": 150
+}

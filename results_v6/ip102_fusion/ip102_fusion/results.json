@@ -1,0 +1,10 @@
+{
+  "dataset": "ip102",
+  "model": "fusion",
+  "best_val_acc1": 45.936870399886715,
+  "test_acc1": 44.73225951205143,
+  "test_acc5": 75.03265121453317,
+  "test_loss": 2.662580105860855,
+  "total_params_M": 2.373402,
+  "epochs": 150
+}

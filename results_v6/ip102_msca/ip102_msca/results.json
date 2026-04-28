@@ -1,0 +1,10 @@
+{
+  "dataset": "ip102",
+  "model": "msca",
+  "best_val_acc1": 63.39825376771509,
+  "test_acc1": 63.16935135771204,
+  "test_acc5": 86.11232045447251,
+  "test_loss": 2.0745505635822448,
+  "total_params_M": 2.272726,
+  "epochs": 150
+}

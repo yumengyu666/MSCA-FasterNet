@@ -1,0 +1,42 @@
+[2026-04-28 13:16:34] [INFO] Args: {
+  "dataset": "ip102",
+  "data_dir": "/root/autodl-tmp/MSCA-FasterNet/data/IP102",
+  "cache_dir": null,
+  "model": "baseline",
+  "num_classes": 102,
+  "pretrained": "/root/autodl-tmp/MSCA-FasterNet/checkpoints/fasternet_t0.pth",
+  "msca_reduction": 16,
+  "epochs": 150,
+  "batch_size": 128,
+  "lr": 0.0004,
+  "min_lr": 1e-06,
+  "weight_decay": 0.005,
+  "label_smoothing": 0.1,
+  "drop_path": 0.05,
+  "warmup_epochs": 10,
+  "scheduler": "cosine",
+  "mixup_alpha": 0.2,
+  "cutmix_alpha": 1.0,
+  "mix_prob": 0.5,
+  "freeze_epochs": 50,
+  "unfreeze_lr_factor": 0.1,
+  "workers": 8,
+  "gpu": "0",
+  "seed": 42,
+  "amp": true,
+  "no_amp": false,
+  "clip_grad": 5.0,
+  "output_dir": "/root/autodl-tmp/results_v6/ip102_baseline",
+  "save_freq": 10,
+  "print_freq": 50,
+  "resume": null,
+  "use_tensorboard": false
+}
+[2026-04-28 13:16:34] [INFO] Using GPU: NVIDIA GeForce RTX 4090 D | CUDA 11.8 | Memory: 24111MB
+[2026-04-28 13:16:34] [INFO] Model: baseline | Params: 2.25M | Trainable: 2.25M
+[2026-04-28 13:16:35] [INFO] Dataset: ip102 | Train: 36034 | Val: 4467 | Test: 4594
+[2026-04-28 13:16:35] [INFO] Backbone frozen for first 50 epochs
+[2026-04-28 13:16:35] [INFO] Starting training...
+[2026-04-28 13:17:13] [INFO] Epoch [0/150] Train Loss: 4.5923e+00 Acc@1: 5.54 Acc@5: 16.44 | Val Loss: 4.4678e+00 Acc@1: 15.72 Acc@5: 37.99 | LR: 4.00e-05
+[2026-04-28 13:17:53] [INFO] Epoch [1/150] Train Loss: 2.3429e+02 Acc@1: 18.01 Acc@5: 38.95 | Val Loss: 3.4778e+00 Acc@1: 27.02 Acc@5: 55.00 | LR: 8.00e-05
+[2026-04-28 13:18:32] [INFO] Epoch [2/150] Train Loss: 9.4943e+02 Acc@1: 27.25 Acc@5: 51.35 | Val Loss: 3.0646e+00 Acc@1: 35.89 Acc@5: 65.61 | LR: 1.20e-04

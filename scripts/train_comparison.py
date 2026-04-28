@@ -27,7 +27,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.amp import GradScaler, autocast
+try:
+    from torch.amp import GradScaler, autocast
+    _AMP_NEW_API = True
+except ImportError:
+    from torch.cuda.amp import GradScaler, autocast
+    _AMP_NEW_API = False
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -54,8 +59,30 @@ TIMM_MODEL_MAP = {
 }
 
 
-def build_comparison_model(model_name, num_classes, pretrained=True):
-    """Build comparison model from timm library."""
+def build_comparison_model(model_name, num_classes, pretrained=True, pretrained_path=None):
+    """Build comparison model from timm library (or torchvision for ShuffleNetV2)."""
+    if model_name == "shufflenetv2_x0.5":
+        # ShuffleNetV2 is not in timm, use torchvision
+        import torchvision.models as tv_models
+        if pretrained_path and os.path.isfile(pretrained_path):
+            # Load from local .pth file
+            model = tv_models.shufflenet_v2_x0_5(weights=None)
+            state = torch.load(pretrained_path, map_location='cpu')
+            # torchvision state_dict may have different key prefix
+            if isinstance(state, dict) and 'state_dict' in state:
+                state = state['state_dict']
+            model_dict = model.state_dict()
+            pretrained_dict = {k: v for k, v in state.items()
+                              if k in model_dict and v.shape == model_dict[k].shape}
+            model.load_state_dict(pretrained_dict, strict=False)
+            print(f"ShuffleNetV2: loaded {len(pretrained_dict)}/{len(model_dict)} pretrained keys from {pretrained_path}")
+        else:
+            model = tv_models.shufflenet_v2_x0_5(weights=None)
+        # Replace classifier head
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+        return model
+
+    # All other models use timm
     try:
         import timm
     except ImportError:
@@ -63,11 +90,24 @@ def build_comparison_model(model_name, num_classes, pretrained=True):
 
     timm_name = TIMM_MODEL_MAP.get(model_name, model_name)
 
-    model = timm.create_model(
-        timm_name,
-        pretrained=pretrained,
-        num_classes=num_classes,
-    )
+    if pretrained_path and os.path.isfile(pretrained_path):
+        # Load from local .pth file (for offline environments)
+        model = timm.create_model(timm_name, pretrained=False, num_classes=num_classes)
+        state = torch.load(pretrained_path, map_location='cpu')
+        model_dict = model.state_dict()
+        pretrained_dict = {k: v for k, v in state.items()
+                          if k in model_dict and v.shape == model_dict[k].shape}
+        model.load_state_dict(pretrained_dict, strict=False)
+        skipped = [k for k in state if k not in pretrained_dict or state[k].shape != model_dict.get(k, torch.empty(0)).shape]
+        print(f"{timm_name}: loaded {len(pretrained_dict)}/{len(model_dict)} pretrained keys from {pretrained_path}")
+        if skipped:
+            print(f"  Skipped (head/shape mismatch): {skipped[:5]}")
+    else:
+        model = timm.create_model(
+            timm_name,
+            pretrained=pretrained,
+            num_classes=num_classes,
+        )
 
     return model
 
@@ -94,6 +134,10 @@ def parse_args():
     parser.add_argument("--output-dir", type=str, default="checkpoints/comparison")
     parser.add_argument("--save-freq", type=int, default=10)
     parser.add_argument("--no-pretrained", action="store_true")
+    parser.add_argument("--pretrained-path", type=str, default=None,
+                        help="Path to local pretrained weights (.pth) for offline loading")
+    parser.add_argument("--amp", action="store_true", default=True,
+                        help="Use AMP mixed precision (default: True)")
 
     # Same augmentation args as train.py for fair comparison
     parser.add_argument("--mixup-alpha", type=float, default=0.2,
@@ -175,6 +219,7 @@ def main():
     model = build_comparison_model(
         args.model, num_classes,
         pretrained=not args.no_pretrained,
+        pretrained_path=args.pretrained_path,
     )
     model = model.to(device)
 
@@ -202,7 +247,7 @@ def main():
         optimizer, T_max=args.epochs - args.warmup_epochs, eta_min=args.min_lr
     )
     use_cuda = device.type == "cuda"
-    scaler = GradScaler("cuda") if use_cuda else None
+    scaler = GradScaler("cuda" if _AMP_NEW_API else 1) if use_cuda else None
 
     # Progressive freezing (safe for any model architecture)
     if args.freeze_epochs > 0:
@@ -259,7 +304,11 @@ def main():
                     else:
                         use_mix = False
 
-            with autocast(device_type="cuda", enabled=use_cuda):
+            if _AMP_NEW_API:
+                amp_ctx = autocast(device_type="cuda", enabled=use_cuda)
+            else:
+                amp_ctx = autocast(enabled=use_cuda)
+            with amp_ctx:
                 outputs = model(images)
                 if use_mix:
                     loss = mixup_criterion(criterion, outputs, labels_a, labels_b, lam)

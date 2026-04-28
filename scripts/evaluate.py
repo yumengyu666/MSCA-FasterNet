@@ -99,7 +99,7 @@ def build_model_from_checkpoint(args, device):
 
 
 @torch.no_grad()
-def evaluate(model, dataloader, device, num_classes):
+def evaluate(model, dataloader, device, num_classes, model_name="full"):
     """Full evaluation with per-class metrics."""
     model.eval()
 
@@ -204,7 +204,7 @@ def main():
         )
 
     # Evaluate
-    results, all_preds, all_labels, cm = evaluate(model, test_loader, device, num_classes)
+    results, all_preds, all_labels, cm = evaluate(model, test_loader, device, num_classes, model_name)
 
     logger.info(f"Top-1 Accuracy: {results['top1_acc']:.2f}%")
     logger.info(f"Top-5 Accuracy: {results['top5_acc']:.2f}%")

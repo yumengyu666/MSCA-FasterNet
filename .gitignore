@@ -12,7 +12,7 @@ build/
 *.pth
 *.pt
 !checkpoints/.gitkeep
-!checkpoints/**/*.pth
+!checkpoints/fasternet_t0.pth
 
 # Data
 data/IP102/
@@ -50,6 +50,11 @@ results/*.png
 # Debug/test runs (local only, never push)
 checkpoints/test_run/
 checkpoints/test_run_gpu/
+checkpoints/timm_weights/
+
+# AutoDL scripts (local only)
+autodl_overnight.sh
+run_overnight.sh
 
 # WorkBuddy
 .workbuddy/

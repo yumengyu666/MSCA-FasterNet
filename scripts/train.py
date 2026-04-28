@@ -17,6 +17,7 @@ Usage:
 
 import os
 import sys
+import math
 import argparse
 import json
 import time
@@ -193,12 +194,25 @@ def build_dataloaders(args, num_classes):
     """Build train/val/test dataloaders."""
     # 如果指定了缓存目录，使用HDF5高速缓存
     if args.cache_dir:
+        import os
         from datasets.hdf5_dataset import build_cached_dataloader
 
-        print(f"[Cache] 📦 使用HDF5缓存模式: {args.cache_dir}")
+        # cache_dir是目录，需要拼接{dataset}.h5形成文件路径
+        hdf5_file = os.path.join(args.cache_dir, args.dataset + ".h5")
+        if not os.path.exists(hdf5_file):
+            # fallback: 试试大写
+            hdf5_file_upper = os.path.join(args.cache_dir, args.dataset.upper() + ".h5")
+            if os.path.exists(hdf5_file_upper):
+                hdf5_file = hdf5_file_upper
+            else:
+                raise FileNotFoundError(
+                    "HDF5 cache not found: tried %s and %s" % (hdf5_file, hdf5_file_upper)
+                )
+
+        print("[Cache] Using HDF5 cache: %s" % hdf5_file)
 
         train_loader = build_cached_dataloader(
-            hdf5_path=args.cache_dir,
+            hdf5_path=hdf5_file,
             split="train",
             batch_size=args.batch_size,
             num_workers=args.workers,
@@ -206,14 +220,14 @@ def build_dataloaders(args, num_classes):
             use_weighted_sampler=True,
         )
         val_loader = build_cached_dataloader(
-            hdf5_path=args.cache_dir,
+            hdf5_path=hdf5_file,
             split="val",
             batch_size=args.batch_size,
             num_workers=args.workers,
             input_size=224,
         )
         test_loader = build_cached_dataloader(
-            hdf5_path=args.cache_dir,
+            hdf5_path=hdf5_file,
             split="test",
             batch_size=args.batch_size,
             num_workers=args.workers,
@@ -406,7 +420,10 @@ def train_one_epoch(
             acc5 = lam * acc5_a + (1 - lam) * acc5_b
         else:
             acc1, acc5 = _accuracy(outputs, labels, topk=(1, 5))
-        losses.update(loss.item(), images.size(0))
+        loss_val = loss.item()
+        if not math.isfinite(loss_val):
+            loss_val = 999.0  # Replace inf/nan with sentinel for logging
+        losses.update(loss_val, images.size(0))
         top1.update(acc1.item(), images.size(0))
         top5.update(acc5.item(), images.size(0))
 

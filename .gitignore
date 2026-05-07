@@ -65,5 +65,10 @@ env/
 # Distribution
 *.whl
 
+# Internal planning documents (local only, not for GitHub)
+SCI论文项目总纲.md
+20260426全局概览.md
+技术设计原理与实现步骤.md
+
 # Diagnostics
 diagnose_fusion.py

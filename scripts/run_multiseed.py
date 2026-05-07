@@ -4,8 +4,7 @@ Runs each experiment configuration with multiple random seeds (default: 3),
 then performs pairwise statistical tests (paired t-test, Wilcoxon signed-rank)
 to determine whether performance differences are significant.
 
-This is REQUIRED for SCI papers to establish confidence in results beyond
-a single random seed.
+Establishes statistical confidence in results beyond a single random seed.
 
 Usage:
     # Run all experiments with 3 seeds:

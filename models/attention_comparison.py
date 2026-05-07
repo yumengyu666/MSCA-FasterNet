@@ -1,4 +1,4 @@
-"""Attention method comparison modules for SCI paper.
+"""Attention method comparison modules.
 
 Implements standard attention mechanisms as drop-in replacements for MSCA,
 enabling fair comparison on the same FasterNet-T0 backbone:

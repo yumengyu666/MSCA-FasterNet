@@ -6,7 +6,7 @@ Extracts and visualizes:
     3. Scale preference distribution across classes
     4. Top-K channel importance heatmap
 
-These visualizations are critical for the SCI paper to demonstrate:
+These visualizations demonstrate:
     - MSCA's adaptive scale selection behavior on different pest/disease types
     - Channel-wise feature importance patterns
     - Correlation between lesion size and scale attention

@@ -1,13 +1,13 @@
-"""HDF5 Cached Dataset — 消除数据加载瓶颈，增强逻辑100%不变。
+"""HDF5 Cached Dataset — eliminate data loading bottleneck, augmentation logic unchanged.
 
-设计原则（SCI论文安全）:
-    - HDF5只消除I/O瓶颈: JPEG解码 + Resize(256)
-    - 数据增强 100% 复用原始 torchvision 代码
-    - 审稿人用原代码可以完美复现实验结果
-    - Method章节不用改一个字
+Design:
+    - HDF5 eliminates I/O bottleneck: JPEG decode + Resize(256)
+    - Data augmentation 100% reuses original torchvision code
+    - Results are fully reproducible with original data loader
+    - Method section unchanged
 
-数据流对比:
-    原始: 磁盘JPEG → PIL解码(慢) → Resize(256)(慢) → [原torchvision增强] → tensor
+Data flow comparison:
+    Original: disk JPEG → PIL decode (slow) → Resize(256) (slow) → [torchvision aug] → tensor
     v2:   HDF5 mmap(快) → 转PIL Image(~0ms) → [完全相同的原增强] → tensor
 
 用法:
@@ -163,7 +163,7 @@ class HDF5CachedDataset(Dataset):
     核心保证:
     - 从HDF5 mmap读取预解码+预resize的uint8图像 (近瞬时)
     - 包装为PIL.Image后，使用与原始代码**完全相同**的torchvision transforms
-    - 实验结果可精确复现，SCI论文Method无需修改
+    - 实验结果可精确复现
 
     注意:
     - 预处理尺寸必须 >= 训练input_size (默认256 >= 224)

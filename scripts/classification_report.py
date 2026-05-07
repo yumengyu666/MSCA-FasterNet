@@ -1,6 +1,6 @@
 """Comprehensive Precision/Recall/F1 classification report.
 
-Generates publication-ready per-class and overall metrics tables for SCI papers.
+Generates publication-ready per-class and overall metrics tables.
 Includes:
     - Per-class Precision, Recall, F1-score with support counts
     - Macro/Weighted/Micro averages

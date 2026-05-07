@@ -48,14 +48,3 @@ comparison_models:
     timm_name: efficientnet_lite0
     year: 2020
 
-# Target journals
-journals:
-  - name: Agriculture
-    publisher: MDPI
-    cas_ranking: Q2/Q3
-    if: 3.3
-
-  - name: Applied Sciences
-    publisher: MDPI
-    cas_ranking: Q3/Q4
-    if: 2.5
